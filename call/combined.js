@@ -151,11 +151,16 @@ async function sendToTranscriptionAPI(downloadData) {
       headers: {
         'Content-Type': 'application/json'
       },
-      timeout: 30000 // 30 second timeout
+      timeout: 60000 // 60 second timeout for transcription
     });
     
-    console.log('✅ Successfully sent to transcription API!');
-    console.log('Response:', response.data);
+    console.log('✅ Transcription API response received!');
+    console.log('📝 Transcription:', response.data.transcription);
+    
+    // Send transcription to emergency analysis API
+    if (response.data && response.data.transcription) {
+      await sendToEmergencyAnalysis(response.data, downloadData);
+    }
     
   } catch (error) {
     if (error.code === 'ECONNREFUSED') {
@@ -163,6 +168,47 @@ async function sendToTranscriptionAPI(downloadData) {
       console.error('Make sure your transcription service is running');
     } else {
       console.error('❌ Error sending to transcription API:', error.message);
+    }
+  }
+}
+
+async function sendToEmergencyAnalysis(transcriptionData, callData) {
+  try {
+    console.log('🚨 Sending to emergency analysis API...');
+    
+    const emergencyPayload = {
+      transcription: transcriptionData.transcription,
+      call_sid: callData.callSid,
+      recording_sid: callData.recordingSid,
+      duration: callData.duration,
+      caller_phone: callData.caller_phone || "unknown"
+    };
+    
+    const response = await axios.post('http://localhost:3001/analyze-emergency', emergencyPayload, {
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      timeout: 30000 // 30 second timeout
+    });
+    
+    console.log('✅ Emergency analysis completed!');
+    console.log('🎯 Priority Score:', response.data.priority_score);
+    console.log('🚨 Emergency Type:', response.data.analysis?.emergency_type);
+    console.log('📍 Location:', response.data.analysis?.location?.address);
+    console.log('⚡ Emergency ID:', response.data.emergency_id);
+    
+    // Log full analysis for debugging
+    console.log('📊 Full Analysis:', JSON.stringify(response.data.analysis, null, 2));
+    
+  } catch (error) {
+    if (error.code === 'ECONNREFUSED') {
+      console.error('❌ Cannot connect to emergency analysis API at localhost:3001');
+      console.error('Make sure your groq.js service is running');
+    } else {
+      console.error('❌ Error sending to emergency analysis API:', error.message);
+      if (error.response) {
+        console.error('Response data:', error.response.data);
+      }
     }
   }
 }
