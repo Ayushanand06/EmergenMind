@@ -1,110 +1,53 @@
 import { NextResponse } from "next/server"
 import type { Incident } from "@/lib/types"
 
-function minutesAgo(mins: number) {
-  const d = new Date(Date.now() - mins * 60_000)
-  return d.toISOString()
+// Helper to format ISO timestamp
+function minutesAgoFromISO(iso: string) {
+  const now = new Date()
+  const then = new Date(iso)
+  const diffMs = now.getTime() - then.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  return diffMins
 }
 
 export async function GET() {
-  const incidents: Incident[] = [
-    {
-      id: "INC-1001",
-      type: "fire",
-      priority: 100,
-      severity: 5,
-      urgency: "Immediate",
-      address: "123 Main Street",
-      timestamp: minutesAgo(5),
-      summary: "Kitchen engulfed, caller trapped, neighbor unconscious",
-      victimsCount: 2,
-      transcription:
-        "Caller reports heavy smoke and flames in the kitchen, one person is trapped in a bedroom, neighbor collapsed from smoke.",
-      analysis: {
-        location: "Residential, single-family home",
-        victims: 2,
-        injuries: ["Smoke inhalation", "Burn risk"],
-        resourcesNeeded: ["Fire engine x2", "Ladder truck", "Ambulance x2"],
-      },
-      status: "active",
-    },
-    {
-      id: "INC-1002",
-      type: "medical",
-      priority: 82,
-      severity: 4,
-      urgency: "High",
-      address: "45 Oak Avenue",
-      timestamp: minutesAgo(18),
-      summary: "Elderly patient with chest pain, shortness of breath",
-      victimsCount: 1,
-      transcription: "Patient reports acute chest pain radiating to left arm, shortness of breath, pale and sweating.",
-      analysis: {
-        location: "Residential apartment",
-        victims: 1,
-        injuries: ["Possible cardiac event"],
-        resourcesNeeded: ["Ambulance", "Cardiac monitor", "ALS crew"],
-      },
-      status: "active",
-    },
-    {
-      id: "INC-1003",
-      type: "other",
-      priority: 60,
-      severity: 2,
-      urgency: "Low",
-      address: "Industrial Park, Bldg 7",
-      timestamp: minutesAgo(29),
-      summary: "Minor chemical spill in warehouse, no injuries",
-      victimsCount: 0,
-      transcription: "Small spill contained within pallet area, ventilation active, no reported exposures.",
-      analysis: {
-        location: "Warehouse",
-        victims: 0,
-        injuries: [],
-        resourcesNeeded: ["Hazmat technician assessment"],
-      },
-      status: "pending",
-    },
-    {
-      id: "INC-1004",
-      type: "medical",
-      priority: 45,
-      severity: 2,
-      urgency: "Non-urgent",
-      address: "200 Elm Street",
-      timestamp: minutesAgo(55),
-      summary: "Minor laceration, bleeding controlled",
-      victimsCount: 1,
-      transcription: "Cut from kitchen knife, bleeding controlled, patient stable and alert.",
-      analysis: {
-        location: "Residential home",
-        victims: 1,
-        injuries: ["Minor laceration"],
-        resourcesNeeded: ["Basic first aid"],
-      },
-      status: "pending",
-    },
-    {
-      id: "INC-1005",
-      type: "fire",
-      priority: 74,
-      severity: 3,
-      urgency: "High",
-      address: "Pine Ridge Trailhead",
-      timestamp: minutesAgo(90),
-      summary: "Brush fire reported near trail, spreading slowly",
-      victimsCount: 0,
-      transcription: "Approximately quarter-acre brush fire, light winds, no structures threatened yet.",
-      analysis: {
-        location: "Outdoor, brush area",
-        victims: 0,
-        injuries: [],
-        resourcesNeeded: ["Brush engine", "Water tender", "Hand crew"],
-      },
-      status: "active",
-    },
-  ]
+  try {
+    const res = await fetch("https://870ab47a08e1.ngrok-free.app/emergencies/all")
+    if (!res.ok) {
+      return NextResponse.json({ error: "Failed to fetch data" }, { status: res.status })
+    }
 
-  return NextResponse.json({ incidents })
+    const data = await res.json()
+
+    // The array is under data.emergencies
+    const rawEmergencies = data.emergencies || []
+
+    // Map to your Incident type
+    const incidents: Incident[] = rawEmergencies.map((item: any) => ({
+      id: item.id,
+      type: item.analysis.emergency_type || "other",
+      priority: item.priority_score || 0,
+      severity: item.analysis.severity_level || 1,
+      urgency: item.analysis.urgency || "Low",
+      address: item.analysis.location?.address || "Unknown",
+      timestamp: item.timestamp,
+      summary: item.analysis.summary || "",
+      victimsCount: item.analysis.people_involved?.victims || 0,
+      transcription: item.raw_transcription || "",
+      analysis: {
+        location: item.analysis.location?.address || "Unknown",
+        victims: item.analysis.people_involved?.victims || 0,
+        injuries: item.analysis.medical_info?.injuries || [],
+        resourcesNeeded: Object.keys(item.analysis.resources_needed || {}).filter(
+          (key) => item.analysis.resources_needed[key] === true
+        ),
+      },
+      status: item.status || "pending",
+    }))
+
+    return NextResponse.json({ incidents })
+  } catch (err) {
+    console.error("Error fetching incidents:", err)
+    return NextResponse.json({ error: "Something went wrong" }, { status: 500 })
+  }
 }

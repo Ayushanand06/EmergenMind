@@ -11,8 +11,6 @@ import {
   YAxis,
   Tooltip,
   Bar,
-  AreaChart,
-  Area,
   Legend,
 } from "recharts"
 import type { Incident } from "@/lib/types"
@@ -42,25 +40,19 @@ function bySeverity(incidents: Incident[]) {
   return bins
 }
 
-function trendOverTime(incidents: Incident[]) {
-  // Group by hour label
-  const map = new Map<string, number>()
-  incidents.forEach((i) => {
-    const d = new Date(i.timestamp)
-    const label = `${d.getHours()}:00`
-    map.set(label, (map.get(label) ?? 0) + 1)
-  })
-  return Array.from(map.entries()).map(([time, count]) => ({ time, count }))
-}
-
 function byUrgency(incidents: Incident[]) {
-  const keys: Incident["urgency"][] = ["Immediate", "High", "Low", "Non-urgent"]
+  const urgencies = ["Immediate", "High", "Low", "Non-urgent"]
   const map = new Map<string, Record<string, number>>()
+
   incidents.forEach((i) => {
-    const key = i.type
-    if (!map.has(key)) map.set(key, { Immediate: 0, High: 0, Low: 0, "Non-urgent": 0 })
-    map.get(key)![i.urgency] += 1
+    const type = i.type || "Other"
+    const urgency =
+      urgencies.find((u) => u.toLowerCase() === i.urgency.toLowerCase()) || "Non-urgent"
+
+    if (!map.has(type)) map.set(type, { Immediate: 0, High: 0, Low: 0, "Non-urgent": 0 })
+    map.get(type)![urgency] += 1
   })
+
   return Array.from(map.entries()).map(([type, data]) => ({ type, ...data }))
 }
 
@@ -77,18 +69,38 @@ export function AnalyticsTabs({
 }) {
   const typeData = byType(incidents)
   const severityData = bySeverity(incidents)
-  const trendData = trendOverTime(incidents)
   const urgencyData = byUrgency(incidents)
 
-  const util = utilProp ?? getUnitsUtilization()
+  // Use live data if utilProp is all zeros or missing
+  const util =
+    utilProp && Object.values(utilProp).some((u) => u.used > 0)
+      ? utilProp
+      : getUnitsUtilization()
+
   const unitChartData = [
-    { type: "Ambulance", Used: util.ambulance.used, Free: util.ambulance.free },
-    { type: "Police", Used: util.police.used, Free: util.police.free },
-    { type: "Firefighter", Used: util.firefighter.used, Free: util.firefighter.free },
+    {
+      type: "Ambulance",
+      Used: Number(util.ambulance.used || 0),
+      Free: Number(util.ambulance.free ?? util.ambulance.total - util.ambulance.used),
+    },
+    {
+      type: "Police",
+      Used: Number(util.police.used || 0),
+      Free: Number(util.police.free ?? util.police.total - util.police.used),
+    },
+    {
+      type: "Firefighter",
+      Used: Number(util.firefighter.used || 0),
+      Free: Number(util.firefighter.free ?? util.firefighter.total - util.firefighter.used),
+    },
   ]
+
+  // Debug to verify values
+  console.log("Unit Chart Data:", unitChartData)
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" id="analytics">
+      {/* Distribution by Type */}
       <Card>
         <CardHeader>
           <CardTitle>Distribution by Type</CardTitle>
@@ -96,7 +108,14 @@ export function AnalyticsTabs({
         <CardContent className="h-64">
           <ResponsiveContainer>
             <PieChart>
-              <Pie data={typeData} dataKey="value" nameKey="name" outerRadius={90} label stroke="transparent">
+              <Pie
+                data={typeData}
+                dataKey="value"
+                nameKey="name"
+                outerRadius={90}
+                label
+                stroke="transparent"
+              >
                 {typeData.map((_, idx) => (
                   <Cell key={`c-${idx}`} fill={COLORS[idx % COLORS.length]} />
                 ))}
@@ -108,6 +127,7 @@ export function AnalyticsTabs({
         </CardContent>
       </Card>
 
+      {/* Incidents per Severity */}
       <Card>
         <CardHeader>
           <CardTitle>Incidents per Severity</CardTitle>
@@ -124,22 +144,7 @@ export function AnalyticsTabs({
         </CardContent>
       </Card>
 
-      <Card className="lg:col-span-2">
-        <CardHeader>
-          <CardTitle>Trend Over Time</CardTitle>
-        </CardHeader>
-        <CardContent className="h-64">
-          <ResponsiveContainer>
-            <AreaChart data={trendData}>
-              <XAxis dataKey="time" />
-              <YAxis allowDecimals={false} />
-              <Tooltip />
-              <Area dataKey="count" stroke="var(--color-chart-2)" fill="var(--color-chart-2)" fillOpacity={0.25} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-
+      {/* Urgency by Type (Stacked) */}
       <Card className="lg:col-span-2">
         <CardHeader>
           <CardTitle>Urgency by Type (Stacked)</CardTitle>
@@ -160,6 +165,7 @@ export function AnalyticsTabs({
         </CardContent>
       </Card>
 
+      {/* Units Utilization (Used vs Free) */}
       <Card className="lg:col-span-2">
         <CardHeader>
           <CardTitle>Units Utilization (Used vs Free)</CardTitle>
